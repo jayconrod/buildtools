@@ -3,13 +3,20 @@ package build
 import "testing"
 
 func nodeToString(e Expr) string {
-	if bin, ok := e.(*BinaryExpr); ok {
-		return bin.Op
+	switch e := e.(type) {
+	case *BinaryExpr:
+		return e.Op
+	case *Ident:
+		return e.Name
+	case *LiteralExpr:
+		return e.Token
+	case *LoadStmt:
+		return "load"
+	case *StringExpr:
+		return e.Value
+	default:
+		return "unknown"
 	}
-	if lit, ok := e.(*LiteralExpr); ok {
-		return lit.Token
-	}
-	return "unknown"
 }
 
 // (1 + 2) * (3 - 4)
@@ -27,12 +34,36 @@ var binaryExprExample Expr = &BinaryExpr{
 	},
 }
 
+var loadStmtExample Expr = &LoadStmt{
+	Module: &StringExpr{Value: "//:foo.bzl"},
+	From:   []*Ident{{Name: "x"}, {Name: "z"}},
+	To:     []*Ident{{Name: "y"}, {Name: "z"}},
+}
+
 func TestWalk(t *testing.T) {
-	var prefix []string
-	Walk(binaryExprExample, func(e Expr, stk []Expr) {
-		prefix = append(prefix, nodeToString(e))
-	})
-	compare(t, prefix, []string{"*", "+", "1", "2", "-", "3", "4"})
+	for _, tc := range []struct {
+		desc       string
+		expr       Expr
+		wantPrefix []string
+	}{
+		{
+			desc:       "BinaryExpr",
+			expr:       binaryExprExample,
+			wantPrefix: []string{"*", "+", "1", "2", "-", "3", "4"},
+		}, {
+			desc:       "LoadStmt",
+			expr:       loadStmtExample,
+			wantPrefix: []string{"load", "//:foo.bzl", "x", "y", "z", "z"},
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			var prefix []string
+			Walk(tc.expr, func(e Expr, stk []Expr) {
+				prefix = append(prefix, nodeToString(e))
+			})
+			compare(t, prefix, tc.wantPrefix)
+		})
+	}
 }
 
 func TestWalkOnce(t *testing.T) {
